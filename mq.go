@@ -29,7 +29,7 @@ func init() {
 	// 日志输出文件
 	file, err := os.OpenFile("sys.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalln("Faild to open error logger file:", err)
+		log.Fatalln("Failed to open error logger file:", err)
 	}
 	// 自定义日志格式
 	log.SetOutput(file)

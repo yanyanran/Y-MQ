@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"log"
-	"reflect"
 	"strings"
 )
 
@@ -40,7 +39,6 @@ func (p *Protocol) IOLoop(ctx context.Context, client StatefulReadWriter) error 
 			//p.channel.RemoveClient(client)
 			break
 		}
-
 		// replace 返回将s中前n个不重叠old子串都替换为new的新字符串，如果n<0会替换所有old子串
 		line = strings.Replace(line, "\n", " ", -1)
 		//line = strings.Replace(line, "\r", " ", -1)
@@ -72,34 +70,20 @@ func (p *Protocol) IOLoop(ctx context.Context, client StatefulReadWriter) error 
 	return err
 }
 
-// Execute 使用反射（/switch）为该命令调用适当的方法
+// Execute 使用switch/case为该命令调用适当的方法
 func (p *Protocol) Execute(client StatefulReadWriter, params ...string) ([]byte, error) {
-	var (
-		err  error
-		resp []byte
-	)
-
-	// 以传入的 params 的第一项作为方法名，判断有无实现该函数并执行发射调用
-	typ := reflect.TypeOf(p)
-	args := make([]reflect.Value, 3)
-	args[0] = reflect.ValueOf(p)
-	args[1] = reflect.ValueOf(client)
-
 	cmd := strings.ToUpper(params[0])
-
-	if method, ok := typ.MethodByName(cmd); ok {
-		log.Printf("[Execute]: " + cmd)
-		args[2] = reflect.ValueOf(params)
-		returnValues := method.Func.Call(args) // 传value启动Call
-
-		if !returnValues[0].IsNil() {
-			resp = returnValues[0].Interface().([]byte)
-		}
-
-		if !returnValues[1].IsNil() {
-			err = returnValues[1].Interface().(error)
-		}
-		return resp, err
+	switch cmd {
+	case "SUB":
+		return p.SUB(client, params)
+	case "GET":
+		return p.GET(client, params)
+	case "FIN":
+		return p.FIN(client, params)
+	case "REQ":
+		return p.REQ(client, params)
+	case "PUB":
+		return p.PUB(client, params)
 	}
 	return nil, ClientErrInvalid
 }
