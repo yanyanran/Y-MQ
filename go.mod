@@ -1,3 +1,3 @@
-module MQ
+module Y-MQ
 
 go 1.19
