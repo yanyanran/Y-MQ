@@ -1,9 +1,10 @@
-package main
+package yerMQ
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/golang/glog"
 	"sync"
 	"time"
 )
@@ -33,13 +34,15 @@ func newUuid() []byte {
 }
 
 const (
-	workerBits  uint8 = 10
-	numberBits  uint8 = 12
-	workerMax   int64 = -1 ^ (-1 << workerBits)
-	numberMax   int64 = -1 ^ (-1 << numberBits)
-	timeShift         = workerBits + numberBits
-	workerShift       = numberBits
-	startTime   int64 = 1525705533000 // 如果在程序跑了一段时间修改了epoch这个值 可能会导致生成相同的ID
+	startTime           = int64(1577808000000)              // 设置起始时间(时间戳/毫秒)：2020-01-01 00:00:00，有效期69年
+	timestampBits       = uint(41)                          // 时间戳占用位数
+	workerBits          = uint(5)                           // 机器所占位数（区分集群下的不同机器）
+	numberBits          = uint(12)                          // 序列号所占位数
+	timeMax             = int64(-1 ^ (-1 << timestampBits)) // 时间戳最大值
+	workerMax     int64 = -1 ^ (-1 << workerBits)           // 支持的最大机器id数
+	numberMax     int64 = -1 ^ (-1 << numberBits)           // 支持的最大序列id数
+	timeShift           = workerBits + numberBits           // 时间戳左移位数
+	workerShift         = numberBits                        // 机器id左移位数
 )
 
 type Worker struct {
@@ -62,23 +65,56 @@ func NewWorker(workerId int64) (*Worker, error) {
 
 func (w *Worker) GetId() int64 {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	now := time.Now().UnixNano() / 1e6
+	now := time.Now().UnixNano() / 1000000 // 转毫秒
 	if w.timestamp == now {
-		w.number++
-		if w.number > numberMax {
+		w.number = (w.number + 1) & numberMax // 或(&)判断同1ms内序列号是否溢出
+		if w.number == 0 {
+			// 当前序列超过12bit-> 等待下1ms(number=0)
 			for now <= w.timestamp {
-				now = time.Now().UnixNano() / 1e6
+				now = time.Now().UnixNano() / 1000000
 			}
 		}
 	} else {
 		w.number = 0
-		w.timestamp = now
 	}
+	t := now - startTime
+	if t > timeMax {
+		w.mu.Unlock()
+		glog.Errorf("epoch must be between 0 and %d", numberMax-1)
+		return 0
+	}
+	w.timestamp = now
 	ID := (now-startTime)<<timeShift | (w.workerId << workerShift) | (w.number)
+	w.mu.Unlock()
 	return ID
 }
 
-func main() {
-	newUuid()
+// GetWorkerID 获取机器ID
+func GetWorkerID(sid int64) (workerId int64) {
+	workerId = (sid >> workerShift) & workerMax
+	return
+}
+
+// GetTimestamp 获取时间戳
+func GetTimestamp(sid int64) (timestamp int64) {
+	timestamp = (sid >> timeShift) & timeMax
+	return
+}
+
+// GetGenTimestamp 获取创建ID时的时间戳
+func GetGenTimestamp(sid int64) (timestamp int64) {
+	timestamp = GetTimestamp(sid) + startTime
+	return
+}
+
+// GetGenTime 获取创建ID时的时间字符串(s)
+func GetGenTime(sid int64) (t string) {
+	t = time.Unix(GetGenTimestamp(sid)/1000, 0).Format("2006-01-02 15:04:05") // /1000换成秒
+	return
+}
+
+// GetTimestampStatus 获取时间戳已使用的占比：范围（0.0 - 1.0）
+func GetTimestampStatus() (state float64) {
+	state = float64(time.Now().UnixNano()/1000000-startTime) / float64(timeMax)
+	return
 }
