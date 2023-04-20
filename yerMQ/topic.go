@@ -12,3 +12,7 @@ type Topic struct {
 	msgChan    chan *Message // 带缓存的中间管道
 
 }
+
+func NewTopic(name string, inMemSize int) *Topic {
+	// TODO
+}

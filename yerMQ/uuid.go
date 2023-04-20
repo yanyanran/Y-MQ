@@ -2,14 +2,19 @@ package yerMQ
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/golang/glog"
 	"sync"
 	"time"
 )
 
 var UuidChan = make(chan []byte, 1000)
+
+type uuid int64
+
+type uuidFactory struct {
+}
 
 func UuidFactory(ctx context.Context) {
 	for {
@@ -29,7 +34,7 @@ func newUuid() []byte {
 		panic(err)
 	}
 	for {
-		fmt.Println(node.GetId())
+		node.NewUuid()
 	}
 }
 
@@ -63,7 +68,7 @@ func NewWorker(workerId int64) (*Worker, error) {
 	}, nil
 }
 
-func (w *Worker) GetId() int64 {
+func (w *Worker) NewUuid() uuid {
 	w.mu.Lock()
 	now := time.Now().UnixNano() / 1000000 // 转毫秒
 	if w.timestamp == now {
@@ -84,9 +89,26 @@ func (w *Worker) GetId() int64 {
 		return 0
 	}
 	w.timestamp = now
-	ID := (now-startTime)<<timeShift | (w.workerId << workerShift) | (w.number)
+	ID := uuid((now-startTime)<<timeShift | (w.workerId << workerShift) | (w.number))
 	w.mu.Unlock()
 	return ID
+}
+
+func (u uuid) Hex() MessageID {
+	var h MessageID
+	var b [8]byte
+
+	b[0] = byte(u >> 56)
+	b[1] = byte(u >> 48)
+	b[2] = byte(u >> 40)
+	b[3] = byte(u >> 32)
+	b[4] = byte(u >> 24)
+	b[5] = byte(u >> 16)
+	b[6] = byte(u >> 8)
+	b[7] = byte(u)
+
+	hex.Encode(h[:], b[:])
+	return h
 }
 
 // GetWorkerID 获取机器ID
