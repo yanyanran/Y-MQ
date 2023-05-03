@@ -3,11 +3,13 @@ package yerMQ
 import (
 	"Y-MQ/tools"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"path"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,6 +104,81 @@ func New(opt *Options) (*YERMQ, error) {
 	return y, nil
 }
 
+// TODO: Metadata
+
+type Metadata struct {
+	Topics []TopicMetadata
+}
+
+type TopicMetadata struct {
+	Name     string
+	Stopped  bool
+	Channels []ChannelMetadata
+}
+
+type ChannelMetadata struct {
+	Name    string
+	Stopped bool
+}
+
+func newMetadataFile(opts *Options) string {
+	return path.Join(opts.DataPath, "yermq.dat")
+}
+
+func readMetadataFile(fn string) ([]byte, error) {
+	data, err := os.ReadFile(fn)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read metadata from %s - %s", fn, err)
+		}
+	}
+	return data, nil
+}
+
+func (y *YERMQ) LoadMetadata() error {
+	atomic.StoreInt32(&y.isLoading, 1)
+	defer atomic.StoreInt32(&y.isLoading, 0)
+
+	fn := newMetadataFile(y.getOpts())
+	data, err := readMetadataFile(fn)
+	if err != nil {
+		return err
+	}
+	if data == nil {
+		return nil
+	}
+
+	var m Metadata
+	err = json.Unmarshal(data, &m) // 解析元数据
+	if err != nil {
+		return fmt.Errorf("failed to parse metadata in %s - %s", fn, err)
+	}
+
+	for _, t := range m.Topics {
+		if !tools.IsValidTopicName(t.Name) {
+			log.Fatalf("skipping creation of invalid topic %s\n", t.Name)
+			continue
+		}
+		topic := y.GetTopic(t.Name)
+		if t.Stopped {
+			topic.Stop()
+		}
+
+		for _, c := range t.Channels {
+			if !tools.IsValidChannelName(c.Name) {
+				log.Fatalf("skipping creation of invalid channel %s", c.Name)
+				continue
+			}
+			channel := topic.GetChannel(c.Name)
+			if c.Stopped {
+				channel.Stop()
+			}
+		}
+		topic.Start()
+	}
+	return nil
+}
+
 func (y *YERMQ) Exit() {
 	// TODO
 }
@@ -159,4 +236,8 @@ func (y *YERMQ) queueScanWorker() {
 
 func (y *YERMQ) queueScanLoop() {
 
+}
+
+func (y *YERMQ) Context() context.Context {
+	return y.ctx
 }
