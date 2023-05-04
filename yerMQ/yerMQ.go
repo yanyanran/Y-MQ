@@ -1,12 +1,14 @@
 package yerMQ
 
 import (
+	"Y-MQ/inIt/protocol"
 	"Y-MQ/tools"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"path"
@@ -155,7 +157,7 @@ func (y *YERMQ) LoadMetadata() error {
 	}
 
 	for _, t := range m.Topics {
-		if !tools.IsValidTopicName(t.Name) {
+		if !protocol.IsValidTopicName(t.Name) {
 			log.Fatalf("skipping creation of invalid topic %s\n", t.Name)
 			continue
 		}
@@ -165,7 +167,7 @@ func (y *YERMQ) LoadMetadata() error {
 		}
 
 		for _, c := range t.Channels {
-			if !tools.IsValidChannelName(c.Name) {
+			if !protocol.IsValidChannelName(c.Name) {
 				log.Fatalf("skipping creation of invalid channel %s", c.Name)
 				continue
 			}
@@ -177,6 +179,64 @@ func (y *YERMQ) LoadMetadata() error {
 		topic.Start()
 	}
 	return nil
+}
+
+func (y *YERMQ) GetMetadata() *Metadata {
+	mdata := &Metadata{}
+
+	for _, topic := range y.topicMap {
+		topicData := TopicMetadata{
+			Name:    topic.name,
+			Stopped: topic.IsStopped(),
+		}
+		topic.mu.Lock()
+		for _, channel := range topic.channelMap {
+			topicData.Channels = append(topicData.Channels, ChannelMetadata{
+				Name:    channel.name,
+				Stopped: channel.IsStopped(),
+			})
+		}
+		topic.mu.Unlock()
+		mdata.Topics = append(mdata.Topics, topicData)
+	}
+	return mdata
+}
+
+// PersistMetadata 持久化元数据
+func (y *YERMQ) PersistMetadata() error {
+	fn := newMetadataFile(y.getOpts())
+	log.Printf("[LOG YERMQ]: persisting topic/channel metadata into %s", fn)
+
+	data, err := json.Marshal(y.getOpts())
+	if err != nil {
+		return err
+	}
+	tmpFileName := fmt.Sprintf("%s.%d.tmp", fn, rand.Int())
+
+	// make a new metadata file to overwrite the original file
+	err = writeSyncFile(tmpFileName, data) // 【security】do not modify directly, write into tmpFile first
+	if err != nil {
+		return err
+	}
+	err = os.Rename(tmpFileName, fn) // rename to overwrite
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeSyncFile(fn string, data []byte) error {
+	f, err := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync() // flush into disk
+	}
+	f.Close()
+	return err
 }
 
 func (y *YERMQ) Exit() {
@@ -227,7 +287,27 @@ func (y *YERMQ) RealHTTPAddr() net.Addr {
 }
 
 func (y *YERMQ) Main() error {
-	// TODO
+	var once sync.Once
+	exitChan := make(chan error)
+	exitFunc := func(err error) {
+		once.Do(func() {
+			if err != nil {
+				log.Fatalf("%s", err)
+			}
+			exitChan <- err
+		})
+	}
+
+	y.waitGroup.Wrap(func() {
+		// TODO:TCPServer
+		// TODO:HTTPServer
+	})
+
+	y.waitGroup.Wrap(y.queueScanLoop)
+	// TODO: 实现服务发现lookupLoop
+
+	err := <-exitChan
+	return err
 }
 
 func (y *YERMQ) queueScanWorker() {

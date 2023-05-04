@@ -61,6 +61,6 @@ func (c *Channel) doStop(pause bool) error {
 	return nil
 }
 
-func (c *Channel) IsPaused() bool {
+func (c *Channel) IsStopped() bool {
 	return atomic.LoadInt32(&c.stopped) == 1
 }
