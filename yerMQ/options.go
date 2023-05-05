@@ -36,6 +36,9 @@ type Options struct {
 	MaxBodySize   int64
 	MaxReqTimeout time.Duration
 	ClientTimeout time.Duration
+
+	// client
+	FlushBufferTimeout time.Duration
 }
 
 func NewOptions() *Options {

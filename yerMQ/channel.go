@@ -64,3 +64,11 @@ func (c *Channel) doStop(pause bool) error {
 func (c *Channel) IsStopped() bool {
 	return atomic.LoadInt32(&c.stopped) == 1
 }
+
+func (c *Channel) AddClient(id int64, client Consumer) error {
+	// TODO
+}
+
+func (c *Channel) RemoveClient(id int64) error {
+	// TODO
+}

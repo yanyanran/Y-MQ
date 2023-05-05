@@ -7,6 +7,11 @@ import (
 	"sync"
 )
 
+const (
+	typeConsumer = iota
+	typeProducer
+)
+
 type tcpServer struct {
 	yerMQ *YERMQ
 	conns sync.Map
