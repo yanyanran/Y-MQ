@@ -299,9 +299,12 @@ func (y *YERMQ) Main() error {
 	}
 
 	y.waitGroup.Wrap(func() {
-		// TODO:TCPServer
-		// TODO:HTTPServer
+		exitFunc(protocol.TCPServer(y.tcpListener, y.tcpServer))
 	})
+
+	// HTTPServer
+	if y.httpListener != nil {
+	}
 
 	y.waitGroup.Wrap(y.queueScanLoop)
 	// TODO: 实现服务发现lookupLoop
